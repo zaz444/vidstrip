@@ -311,25 +311,38 @@
   </style>
 
   <!--
-    Cross-Origin Isolation via Service Worker — required for FFmpeg.wasm on GitHub Pages.
-    GitHub Pages cannot set COOP/COEP headers directly, so we register a service worker
-    that injects them on every fetch response. On Netlify, the headers in netlify.toml
-    take precedence and the SW is redundant but harmless.
+    Cross-Origin Isolation via Service Worker.
+    FFmpeg.wasm needs SharedArrayBuffer, which requires COOP + COEP headers.
+    GitHub Pages cannot set custom headers, so coi-serviceworker.js injects them.
+    On Netlify, netlify.toml headers take effect instead and the SW is a no-op.
+
+    Strategy:
+      1. Already isolated (server headers or prior SW reload) -> nothing to do.
+      2. Not isolated, SW supported -> register SW, reload once it activates.
+      3. Not isolated, no SW support -> initFFmpeg shows a clear, specific error.
   -->
   <script>
-    if ('serviceWorker' in navigator) {
-      // Register relative to the page so it works in any repo sub-path (e.g. /vidstrip/)
-      navigator.serviceWorker.register('./coi-serviceworker.js').then(reg => {
-        // If the SW was just installed (first visit), reload so headers take effect
-        if (reg.installing || reg.waiting) {
-          reg.installing
-            ? reg.installing.addEventListener('statechange', e => {
-                if (e.target.state === 'activated') location.reload();
-              })
-            : location.reload();
-        }
-      }).catch(err => console.warn('Service worker registration failed:', err));
-    }
+    (function () {
+      if (self.crossOriginIsolated) return;
+
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('./coi-serviceworker.js').then(function (reg) {
+          var sw = reg.installing || reg.waiting;
+          if (sw) {
+            sw.addEventListener('statechange', function (e) {
+              if (e.target.state === 'activated') location.reload();
+            });
+          } else {
+            if (!sessionStorage.getItem('coi_reload')) {
+              sessionStorage.setItem('coi_reload', '1');
+              location.reload();
+            }
+          }
+        }).catch(function (err) {
+          console.warn('COI service worker registration failed:', err);
+        });
+      }
+    })();
   </script>
 </head>
 <body>
@@ -417,17 +430,41 @@
   let currentAudio = null;
   let currentPlayBtn = null;
 
+  function showEngineError(msg) {
+    const el = document.getElementById('engineStatus');
+    el.className = 'engine-error';
+    el.innerHTML = `<svg width="18" height="18" viewBox="0 0 18 18" fill="none" style="flex-shrink:0"><circle cx="9" cy="9" r="7" stroke="#f87171" stroke-width="2" fill="none"/><path d="M9 5v4M9 12v1" stroke="#f87171" stroke-width="2" stroke-linecap="round"/></svg>${msg}`;
+  }
+
   async function initFFmpeg() {
+    // SharedArrayBuffer is required by FFmpeg.wasm and only available when
+    // the page is cross-origin isolated (COOP + COEP headers present).
+    if (typeof SharedArrayBuffer === 'undefined') {
+      // Service worker hasn't activated yet — it will trigger a reload automatically.
+      // Show a softer "loading" message so the user isn't alarmed.
+      const el = document.getElementById('engineStatus');
+      el.innerHTML = el.innerHTML.replace('Preparing converter…', 'Setting up security context… reloading shortly.');
+      return;
+    }
+
     try {
-      ffmpeg = createFFmpeg({ log: false, corePath: 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.11.0/dist/ffmpeg-core.js' });
+      ffmpeg = createFFmpeg({
+        log: false,
+        corePath: 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.11.0/dist/ffmpeg-core.js'
+      });
       await ffmpeg.load();
       document.getElementById('engineStatus').style.display = 'none';
       document.getElementById('dropZone').style.display = '';
+      sessionStorage.removeItem('coi_reload'); // reset reload guard for future visits
     } catch(e) {
-      const el = document.getElementById('engineStatus');
-      el.className = 'engine-error';
-      el.innerHTML = `<svg width="18" height="18" viewBox="0 0 18 18" fill="none" style="flex-shrink:0"><circle cx="9" cy="9" r="7" stroke="#f87171" stroke-width="2" fill="none"/><path d="M9 5v4M9 12v1" stroke="#f87171" stroke-width="2" stroke-linecap="round"/></svg>Could not start. Please use Chrome or Edge with a stable connection.`;
       console.error(e);
+      if (!self.crossOriginIsolated) {
+        showEngineError('Cross-origin isolation is not active. Make sure <code>coi-serviceworker.js</code> is deployed alongside <code>index.html</code> and reload.');
+      } else if (e && e.message && e.message.includes('fetch')) {
+        showEngineError('Could not load FFmpeg — check your internet connection and reload.');
+      } else {
+        showEngineError('FFmpeg failed to start. Open the browser console for details, then reload.');
+      }
     }
   }
 
