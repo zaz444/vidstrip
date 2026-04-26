@@ -309,6 +309,28 @@
 
     .empty-state { text-align: center; color: var(--muted); font-size: 0.8rem; padding: 10px; }
   </style>
+
+  <!--
+    Cross-Origin Isolation via Service Worker — required for FFmpeg.wasm on GitHub Pages.
+    GitHub Pages cannot set COOP/COEP headers directly, so we register a service worker
+    that injects them on every fetch response. On Netlify, the headers in netlify.toml
+    take precedence and the SW is redundant but harmless.
+  -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      // Register relative to the page so it works in any repo sub-path (e.g. /vidstrip/)
+      navigator.serviceWorker.register('./coi-serviceworker.js').then(reg => {
+        // If the SW was just installed (first visit), reload so headers take effect
+        if (reg.installing || reg.waiting) {
+          reg.installing
+            ? reg.installing.addEventListener('statechange', e => {
+                if (e.target.state === 'activated') location.reload();
+              })
+            : location.reload();
+        }
+      }).catch(err => console.warn('Service worker registration failed:', err));
+    }
+  </script>
 </head>
 <body>
 
