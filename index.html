@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>VidStrip — MP4 to MP3</title>
+
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%237c5cfc'/%3E%3Cpath d='M8 10 L8 22 L20 16 Z' fill='white'/%3E%3Crect x='23' y='10' width='3' height='12' rx='1.5' fill='white' opacity='.9'/%3E%3Crect x='28' y='10' width='3' height='12' rx='1.5' fill='white' opacity='.55'/%3E%3C/svg%3E" />
+
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&display=swap');
+
+    :root {
+      --bg:      #0e0e10;
+      --surface: #1a1a1f;
+      --surface2:#24242b;
+      --border:  #2e2e38;
+      --accent:  #7c5cfc;
+      --accent2: #a78bfa;
+      --green:   #4ade80;
+      --red:     #f87171;
+      --yellow:  #fbbf24;
+      --text:    #e2e2ef;
+      --muted:   #6b6b80;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'JetBrains Mono', monospace;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px 20px;
+    }
+
+    .header {
+      text-align: center;
+      margin-bottom: 36px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .header h1 {
+      font-size: 2.2rem;
+      font-weight: 700;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      letter-spacing: -1px;
+      line-height: 1;
+    }
+
+    .header p { color: var(--muted); font-size: 0.82rem; margin-top: -2px; }
+
+    .container {
+      width: 100%;
+      max-width: 760px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    /* Engine status */
+    .engine-loading {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 22px 18px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      font-size: 0.82rem;
+      color: var(--muted);
+    }
+
+    .engine-error {
+      background: var(--surface);
+      border: 1px solid #4a1a1a;
+      border-radius: 10px;
+      padding: 18px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 0.82rem;
+      color: var(--red);
+    }
+
+    /* Drop zone */
+    .drop-zone {
+      border: 2px dashed var(--border);
+      border-radius: 12px;
+      padding: 48px 24px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s;
+      background: var(--surface);
+      position: relative;
+    }
+
+    .drop-zone:hover, .drop-zone.drag-over {
+      border-color: var(--accent);
+      background: #1c1828;
+    }
+
+    .drop-zone input[type="file"] {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer;
+      width: 100%;
+      height: 100%;
+    }
+
+    .drop-icon-wrap { display: flex; justify-content: center; margin-bottom: 14px; }
+    .drop-zone h2 { font-size: 0.95rem; font-weight: 600; margin-bottom: 6px; }
+    .drop-zone p { font-size: 0.76rem; color: var(--muted); }
+
+    /* File list */
+    .file-list { display: flex; flex-direction: column; gap: 12px; }
+
+    .file-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      transition: border-color 0.2s;
+    }
+
+    .file-card:hover { border-color: var(--accent); }
+
+    .card-top {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .file-info { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+
+    .file-original {
+      font-size: 0.72rem;
+      color: var(--muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .rename-row { display: flex; align-items: center; gap: 8px; }
+
+    .rename-input {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.85rem;
+      padding: 6px 10px;
+      flex: 1;
+      min-width: 0;
+      transition: border-color 0.2s;
+    }
+
+    .rename-input:focus { outline: none; border-color: var(--accent); }
+
+    .ext-label { color: var(--accent2); font-size: 0.82rem; white-space: nowrap; }
+
+    .card-right { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
+
+    .status-badge {
+      font-size: 0.7rem;
+      padding: 3px 9px;
+      border-radius: 20px;
+      white-space: nowrap;
+      font-weight: 600;
+    }
+
+    .status-badge.pending    { background: #1f1f30; color: var(--muted); }
+    .status-badge.converting { background: #2a1f00; color: var(--yellow); }
+    .status-badge.done       { background: #0f2d1a; color: var(--green); }
+    .status-badge.error      { background: #2d0f0f; color: var(--red); }
+
+    .remove-btn {
+      background: none;
+      border: none;
+      color: var(--muted);
+      cursor: pointer;
+      padding: 4px;
+      border-radius: 4px;
+      transition: color 0.2s;
+      display: flex;
+      align-items: center;
+    }
+    .remove-btn:hover { color: var(--red); }
+
+    /* Audio preview player */
+    .audio-preview {
+      width: 100%;
+      height: 32px;
+      border-radius: 6px;
+      overflow: hidden;
+      background: var(--surface2);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 0 10px;
+    }
+
+    .play-btn {
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: var(--accent2);
+      padding: 0;
+      display: flex;
+      align-items: center;
+      flex-shrink: 0;
+      transition: color 0.15s;
+    }
+    .play-btn:hover { color: var(--accent); }
+
+    .progress-wrap {
+      flex: 1;
+      height: 4px;
+      background: var(--border);
+      border-radius: 2px;
+      cursor: pointer;
+      position: relative;
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: var(--accent);
+      border-radius: 2px;
+      width: 0%;
+      transition: width 0.1s linear;
+      pointer-events: none;
+    }
+
+    .time-label {
+      font-size: 0.65rem;
+      color: var(--muted);
+      white-space: nowrap;
+      min-width: 36px;
+      text-align: right;
+    }
+
+    /* Actions */
+    .actions {
+      display: flex;
+      gap: 12px;
+      justify-content: flex-end;
+      flex-wrap: wrap;
+    }
+
+    button.btn {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.85rem;
+      font-weight: 600;
+      padding: 10px 22px;
+      border-radius: 8px;
+      border: none;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+    }
+
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-primary:hover:not(:disabled) { background: #6647e8; transform: translateY(-1px); }
+    .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .btn-ghost {
+      background: var(--surface);
+      color: var(--muted);
+      border: 1px solid var(--border);
+    }
+    .btn-ghost:hover { color: var(--text); border-color: var(--accent); }
+
+    /* Log */
+    .log-box {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px 16px;
+      font-size: 0.76rem;
+      color: var(--muted);
+      max-height: 140px;
+      overflow-y: auto;
+      line-height: 1.9;
+    }
+
+    .log-ok   { color: var(--green); }
+    .log-err  { color: var(--red); }
+    .log-info { color: var(--yellow); }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spin { animation: spin 0.9s linear infinite; transform-origin: center; display: inline-block; }
+
+    .empty-state { text-align: center; color: var(--muted); font-size: 0.8rem; padding: 10px; }
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <svg width="54" height="54" viewBox="0 0 54 54" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <linearGradient id="logoGrad" x1="0" y1="0" x2="54" y2="54" gradientUnits="userSpaceOnUse">
+        <stop offset="0%" stop-color="#7c5cfc"/>
+        <stop offset="100%" stop-color="#b49ffe"/>
+      </linearGradient>
+    </defs>
+    <rect width="54" height="54" rx="14" fill="url(#logoGrad)"/>
+    <path d="M14 17 L14 37 L32 27 Z" fill="white"/>
+    <rect x="36" y="17" width="4" height="20" rx="2" fill="white" opacity="0.9"/>
+    <rect x="43" y="21" width="4" height="12" rx="2" fill="white" opacity="0.55"/>
+  </svg>
+  <h1>VidStrip</h1>
+  <p>Rename your files, then convert &amp; download as a ZIP</p>
+</div>
+
+<div class="container">
+
+  <div id="engineStatus" class="engine-loading">
+    <svg width="18" height="18" viewBox="0 0 18 18" style="flex-shrink:0">
+      <circle cx="9" cy="9" r="7" stroke="#2e2e38" stroke-width="2.5" fill="none"/>
+      <path class="spin" d="M9 2 A7 7 0 0 1 16 9" stroke="#7c5cfc" stroke-width="2.5" stroke-linecap="round" fill="none" style="transform-origin:9px 9px"/>
+    </svg>
+    Preparing converter…
+  </div>
+
+  <div class="drop-zone" id="dropZone" style="display:none">
+    <!-- Accept mp4, mov, mkv, webm, avi, m4v broadly — no strict MIME filtering -->
+    <input type="file" id="fileInput" accept=".mp4,.mov,.mkv,.webm,.avi,.m4v,video/*" multiple />
+    <div class="drop-icon-wrap">
+      <svg width="52" height="52" viewBox="0 0 52 52" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect x="5" y="14" width="42" height="28" rx="4" stroke="#3a3a48" stroke-width="2" fill="#1a1a1f"/>
+        <rect x="5" y="18" width="5" height="5" rx="1" fill="#2e2e38"/>
+        <rect x="5" y="27" width="5" height="5" rx="1" fill="#2e2e38"/>
+        <rect x="5" y="33" width="5" height="5" rx="1" fill="#2e2e38"/>
+        <rect x="42" y="18" width="5" height="5" rx="1" fill="#2e2e38"/>
+        <rect x="42" y="27" width="5" height="5" rx="1" fill="#2e2e38"/>
+        <rect x="42" y="33" width="5" height="5" rx="1" fill="#2e2e38"/>
+        <path d="M26 36 L26 22" stroke="#7c5cfc" stroke-width="2.5" stroke-linecap="round"/>
+        <path d="M20 28 L26 22 L32 28" stroke="#7c5cfc" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M20 11 L26 5 L32 11" stroke="#a78bfa" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M26 5 L26 14" stroke="#a78bfa" stroke-width="2" stroke-linecap="round"/>
+      </svg>
+    </div>
+    <h2>Drop video files here</h2>
+    <p>MP4, MOV, MKV, WEBM, AVI — select multiple at once</p>
+  </div>
+
+  <div class="file-list" id="fileList"></div>
+  <div id="emptyState" class="empty-state" style="display:none">No files added yet.</div>
+
+  <div class="actions" id="actions" style="display:none">
+    <button class="btn btn-ghost" onclick="clearAll()">
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+        <path d="M1.5 1.5l9 9M10.5 1.5l-9 9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+      </svg>
+      Clear All
+    </button>
+    <button class="btn btn-primary" id="convertBtn" onclick="convertAll()">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+        <path d="M7 1v6M4 4l3-3 3 3" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M2 9v2a1 1 0 001 1h8a1 1 0 001-1V9" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+      </svg>
+      Convert &amp; Download ZIP
+    </button>
+  </div>
+
+  <div class="log-box" id="logBox" style="display:none"></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+<script>
+  const { createFFmpeg, fetchFile } = FFmpeg;
+  let ffmpeg = null, files = [], idCounter = 0;
+
+  // Track object URLs so we can revoke them on remove
+  const objectURLs = {};
+  // Track currently playing audio element
+  let currentAudio = null;
+  let currentPlayBtn = null;
+
+  async function initFFmpeg() {
+    try {
+      ffmpeg = createFFmpeg({ log: false, corePath: 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.11.0/dist/ffmpeg-core.js' });
+      await ffmpeg.load();
+      document.getElementById('engineStatus').style.display = 'none';
+      document.getElementById('dropZone').style.display = '';
+    } catch(e) {
+      const el = document.getElementById('engineStatus');
+      el.className = 'engine-error';
+      el.innerHTML = `<svg width="18" height="18" viewBox="0 0 18 18" fill="none" style="flex-shrink:0"><circle cx="9" cy="9" r="7" stroke="#f87171" stroke-width="2" fill="none"/><path d="M9 5v4M9 12v1" stroke="#f87171" stroke-width="2" stroke-linecap="round"/></svg>Could not start. Please use Chrome or Edge with a stable connection.`;
+      console.error(e);
+    }
+  }
+
+  const dropZone = document.getElementById('dropZone');
+  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault(); dropZone.classList.remove('drag-over');
+    // Accept any file dropped — let ffmpeg sort it out
+    addFiles(Array.from(e.dataTransfer.files));
+  });
+  document.getElementById('fileInput').addEventListener('change', e => {
+    addFiles(Array.from(e.target.files)); e.target.value = '';
+  });
+
+  function isVideoFile(file) {
+    // Accept by MIME type OR common video extensions
+    if (file.type && file.type.startsWith('video/')) return true;
+    const ext = file.name.split('.').pop().toLowerCase();
+    return ['mp4','mov','mkv','webm','avi','m4v','wmv','flv','ogv','3gp'].includes(ext);
+  }
+
+  function addFiles(list) {
+    const valid = list.filter(isVideoFile);
+    const skipped = list.length - valid.length;
+    if (skipped > 0) log(`Skipped ${skipped} non-video file${skipped>1?'s':''}.`, 'info');
+    valid.forEach(f => {
+      const url = URL.createObjectURL(f);
+      const id = idCounter++;
+      objectURLs[id] = url;
+      files.push({ id, file: f, outputName: f.name.replace(/\.[^.]+$/, ''), status: 'pending', objectURL: url });
+    });
+    render();
+  }
+
+  // SVGs
+  const fileIconSVG = `<svg width="20" height="20" viewBox="0 0 20 20" fill="none" style="flex-shrink:0;opacity:.65">
+    <rect x="3" y="2" width="14" height="16" rx="2" stroke="#3a3a50" stroke-width="1.5"/>
+    <rect x="3" y="4" width="2" height="2" rx=".4" fill="#3a3a50"/>
+    <rect x="3" y="8" width="2" height="2" rx=".4" fill="#3a3a50"/>
+    <rect x="3" y="12" width="2" height="2" rx=".4" fill="#3a3a50"/>
+    <rect x="15" y="4" width="2" height="2" rx=".4" fill="#3a3a50"/>
+    <rect x="15" y="8" width="2" height="2" rx=".4" fill="#3a3a50"/>
+    <rect x="15" y="12" width="2" height="2" rx=".4" fill="#3a3a50"/>
+    <path d="M8 7.5 L8 12.5 L13 10 Z" fill="#7c5cfc" opacity=".9"/>
+  </svg>`;
+
+  const xSVG = `<svg width="11" height="11" viewBox="0 0 11 11" fill="none"><path d="M1 1l9 9M10 1l-9 9" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>`;
+
+  const playSVG = `<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 2.5 L3 11.5 L11.5 7 Z" fill="currentColor"/></svg>`;
+  const pauseSVG = `<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="2.5" y="2" width="3.5" height="10" rx="1" fill="currentColor"/><rect x="8" y="2" width="3.5" height="10" rx="1" fill="currentColor"/></svg>`;
+
+  function render() {
+    const list = document.getElementById('fileList');
+    const actions = document.getElementById('actions');
+    const empty = document.getElementById('emptyState');
+    list.innerHTML = '';
+    if (!files.length) { empty.style.display=''; actions.style.display='none'; return; }
+    empty.style.display = 'none'; actions.style.display = 'flex';
+
+    files.forEach(f => {
+      const card = document.createElement('div');
+      card.className = 'file-card';
+      card.id = `card-${f.id}`;
+      const labels = { pending:'Queued', converting:'Converting…', done:'Done ✓', error:'Error' };
+      const dis = (f.status==='converting'||f.status==='done') ? 'disabled' : '';
+
+      card.innerHTML = `
+        <div class="card-top">
+          ${fileIconSVG}
+          <div class="file-info">
+            <div class="file-original">${esc(f.file.name)}</div>
+            <div class="rename-row">
+              <input class="rename-input" ${dis} type="text" value="${esc(f.outputName)}"
+                oninput="renameFile(${f.id},this.value)" placeholder="output filename"/>
+              <span class="ext-label">.mp3</span>
+            </div>
+          </div>
+          <div class="card-right">
+            <span class="status-badge ${f.status}">${labels[f.status]}</span>
+            <button class="remove-btn" onclick="removeFile(${f.id})" title="Remove">${xSVG}</button>
+          </div>
+        </div>
+        <div class="audio-preview" id="player-${f.id}">
+          <button class="play-btn" id="playbtn-${f.id}" onclick="togglePlay(${f.id})" title="Preview audio">
+            ${playSVG}
+          </button>
+          <div class="progress-wrap" id="prog-wrap-${f.id}" onclick="seekAudio(event, ${f.id})">
+            <div class="progress-fill" id="prog-${f.id}"></div>
+          </div>
+          <span class="time-label" id="time-${f.id}">0:00</span>
+        </div>`;
+
+      list.appendChild(card);
+
+      // Bind the hidden audio element for this file
+      bindAudio(f);
+    });
+  }
+
+  // Map of id -> Audio element
+  const audioEls = {};
+
+  function bindAudio(f) {
+    // Reuse existing audio element if already created
+    if (!audioEls[f.id]) {
+      const audio = new Audio(f.objectURL);
+      audio.preload = 'metadata';
+
+      audio.addEventListener('timeupdate', () => {
+        const pct = audio.duration ? (audio.currentTime / audio.duration) * 100 : 0;
+        const progEl = document.getElementById(`prog-${f.id}`);
+        const timeEl = document.getElementById(`time-${f.id}`);
+        if (progEl) progEl.style.width = pct + '%';
+        if (timeEl) timeEl.textContent = formatTime(audio.currentTime);
+      });
+
+      audio.addEventListener('ended', () => {
+        const btn = document.getElementById(`playbtn-${f.id}`);
+        if (btn) btn.innerHTML = playSVG;
+        const prog = document.getElementById(`prog-${f.id}`);
+        if (prog) prog.style.width = '0%';
+        const time = document.getElementById(`time-${f.id}`);
+        if (time) time.textContent = '0:00';
+        if (currentAudio === audio) { currentAudio = null; currentPlayBtn = null; }
+      });
+
+      audioEls[f.id] = audio;
+    }
+  }
+
+  function togglePlay(id) {
+    const audio = audioEls[id];
+    const btn = document.getElementById(`playbtn-${id}`);
+    if (!audio || !btn) return;
+
+    // Pause any other playing audio
+    if (currentAudio && currentAudio !== audio) {
+      currentAudio.pause();
+      if (currentPlayBtn) currentPlayBtn.innerHTML = playSVG;
+    }
+
+    if (audio.paused) {
+      audio.play();
+      btn.innerHTML = pauseSVG;
+      currentAudio = audio;
+      currentPlayBtn = btn;
+    } else {
+      audio.pause();
+      btn.innerHTML = playSVG;
+      currentAudio = null;
+      currentPlayBtn = null;
+    }
+  }
+
+  function seekAudio(e, id) {
+    const audio = audioEls[id];
+    if (!audio || !audio.duration) return;
+    const wrap = document.getElementById(`prog-wrap-${id}`);
+    const rect = wrap.getBoundingClientRect();
+    const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    audio.currentTime = pct * audio.duration;
+  }
+
+  function formatTime(s) {
+    const m = Math.floor(s / 60);
+    const sec = Math.floor(s % 60);
+    return `${m}:${sec.toString().padStart(2,'0')}`;
+  }
+
+  function renameFile(id, v) {
+    const f = files.find(f => f.id === id);
+    if (f) f.outputName = v.trim() || f.file.name.replace(/\.[^.]+$/, '');
+  }
+
+  function removeFile(id) {
+    // Stop audio if playing
+    if (audioEls[id]) { audioEls[id].pause(); audioEls[id].src = ''; delete audioEls[id]; }
+    if (objectURLs[id]) { URL.revokeObjectURL(objectURLs[id]); delete objectURLs[id]; }
+    files = files.filter(f => f.id !== id);
+    render();
+  }
+
+  function clearAll() {
+    // Stop and clean up all audio
+    Object.keys(audioEls).forEach(id => { audioEls[id].pause(); audioEls[id].src = ''; delete audioEls[id]; });
+    Object.keys(objectURLs).forEach(id => { URL.revokeObjectURL(objectURLs[id]); delete objectURLs[id]; });
+    currentAudio = null; currentPlayBtn = null;
+    files = [];
+    render();
+    const lb = document.getElementById('logBox');
+    lb.style.display = 'none'; lb.innerHTML = '';
+  }
+
+  async function convertAll() {
+    const pending = files.filter(f => f.status === 'pending');
+    if (!pending.length) { log('Nothing queued.', 'info'); return; }
+    const btn = document.getElementById('convertBtn');
+    btn.disabled = true;
+    btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 14 14" class="spin" style="transform-origin:7px 7px"><circle cx="7" cy="7" r="5.5" stroke="rgba(255,255,255,.25)" stroke-width="2" fill="none"/><path d="M7 1.5 A5.5 5.5 0 0 1 12.5 7" stroke="white" stroke-width="2" stroke-linecap="round" fill="none"/></svg> Converting…`;
+    document.getElementById('logBox').style.display = '';
+    log(`${pending.length} file${pending.length > 1 ? 's' : ''} — starting…`, 'info');
+    const zip = new JSZip();
+
+    for (const f of pending) {
+      f.status = 'converting'; render();
+      try {
+        log(`Processing ${f.file.name}`, 'info');
+        const ext = f.file.name.split('.').pop().toLowerCase() || 'mp4';
+        const inp = `in_${f.id}.${ext}`, out = `out_${f.id}.mp3`;
+        ffmpeg.FS('writeFile', inp, await fetchFile(f.file));
+        await ffmpeg.run('-i', inp, '-q:a', '2', '-map', 'a', out);
+        const data = ffmpeg.FS('readFile', out);
+        const blob = new Blob([data.buffer], { type: 'audio/mpeg' });
+        ffmpeg.FS('unlink', inp); ffmpeg.FS('unlink', out);
+        const safe = (f.outputName || 'audio').replace(/[\\/:*?"<>|]/g, '_');
+        zip.file(`${safe}.mp3`, blob);
+        f.status = 'done'; log(`✓ ${f.file.name} → ${safe}.mp3`, 'ok');
+      } catch(err) {
+        f.status = 'error'; log(`✗ ${f.file.name} — failed`, 'err'); console.error(err);
+      }
+      render();
+    }
+
+    log('Packaging…', 'info');
+    const zb = await zip.generateAsync({ type: 'blob' });
+    const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(zb), download: 'vidstrip_mp3s.zip' });
+    a.click(); URL.revokeObjectURL(a.href);
+    log('✓ Download started!', 'ok');
+    // Reset done files back to pending so the button works again
+    files.forEach(f => { if (f.status === 'done') f.status = 'pending'; });
+    btn.disabled = false;
+    btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1v6M4 4l3-3 3 3" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M2 9v2a1 1 0 001 1h8a1 1 0 001-1V9" stroke="white" stroke-width="1.8" stroke-linecap="round"/></svg>Convert &amp; Download ZIP`;
+    render();
+  }
+
+  function log(msg, type = '') {
+    const box = document.getElementById('logBox');
+    const ln = document.createElement('div');
+    if (type) ln.className = `log-${type}`;
+    ln.textContent = `› ${msg}`;
+    box.appendChild(ln); box.scrollTop = box.scrollHeight;
+  }
+
+  function esc(s) {
+    return s.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  initFFmpeg();
+</script>
+</body>
+</html>
